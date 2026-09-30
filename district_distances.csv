@@ -1,0 +1,6 @@
+district,District_A,District_B,District_C,District_D,District_E
+District_A,0.0,42.6,31.9,85.3,59.6
+District_B,42.6,0.0,70.3,43.1,23.5
+District_C,31.9,70.3,0.0,113.1,81.3
+District_D,85.3,43.1,113.1,0.0,38.7
+District_E,59.6,23.5,81.3,38.7,0.0

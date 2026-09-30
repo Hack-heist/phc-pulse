@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<!-- =============================================================
+     PHC-PULSE - DASHBOARD (single-file frontend, stub phase)
+     How to open:
+       Option A (best): VS Code "Live Server" extension -> "Go Live"
+                        (serves it on http://127.0.0.1:5500)
+       Option B: double-click the file (works too - flask-cors
+                 allows any origin).
+     REQUIREMENT: app.py must be running on port 5000 first.
+     ============================================================= -->
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>PHC-Pulse Dashboard</title>
+
+<!-- Chart.js (a free chart-drawing library) loaded from a CDN.
+     "umd.min" = the ready-to-use browser version. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+
+<style>
+/* =============================================================
+   SECTION 1: BASIC SETUP + COLOURS
+   CSS variables let us use the same colour in many places
+   and change it in ONE spot later.
+   ============================================================= */
+:root {
+  --navy:   #0f2942;   /* dark navy: sidebar background */
+  --teal:   #14b8a6;   /* teal: buttons, highlights, active nav */
+  --bg:     #f1f5f9;   /* light grey: page background */
+  --card:   #ffffff;   /* white: content cards */
+  --text:   #1e293b;   /* dark grey: normal text */
+  --green:  #22c55e;   /* healthy status */
+  --orange: #f59e0b;   /* low status */
+  --red:    #ef4444;   /* critical status */
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  display: flex;              /* sidebar on the left, main area on the right */
+  min-height: 100vh;
+}
+
+/* =============================================================
+   SECTION 2: SIDEBAR (the dark navy navigation column)
+   ============================================================= */
+.sidebar {
+  width: 230px;
+  background: var(--navy);
+  color: #cbd5e1;
+  display: flex;
+  flex-direction: column;
+  padding: 20px 12px;
+  flex-shrink: 0;             /* never squash the sidebar */
+}
+.logo {
+  color: #fff;
+  font-size: 20px;
+  font-weight: 700;
+  padding: 0 12px 20px;
+}
+.logo span { color: var(--teal); }         /* the "-Pulse" part in teal */
+
+/* Each navigation item is a button-like link */
+.nav-item {
+  display: block;
+  padding: 12px 16px;
+  margin: 4px 0;
+  border-radius: 8px;
+  color: #cbd5e1;
+  text-decoration: none;
+  font-size: 14px;
+  cursor: pointer;
+}
+.nav-item:hover { background: rgba(255,255,255,0.08); }
+/* .active = the page we're currently looking at (teal highlight) */
+.nav-item.active { background: var(--teal); color: #fff; font-weight: 600; }
+
+/* =============================================================
+   SECTION 3: MAIN AREA (header + pages)
+   ============================================================= */
+.main { flex: 1; display: flex; flex-direction: column; }
+
+.topbar {
+  background: var(--card);
+  padding: 16px 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);   /* the soft shadow */
+}
+.facility { font-size: 18px; font-weight: 700; }
+.date { font-size: 13px; color: #64748b; }
+.bell { font-size: 22px; cursor: pointer; position: relative; }
+/* the little red dot on the bell = unread alerts */
+.bell::after {
+  content: "";
+  position: absolute; top: 0; right: 0;
+  width: 9px; height: 9px;
+  background: var(--red); border-radius: 50%;
+}
+
+.content { padding: 28px; flex: 1; }
+
+/* Only ONE .page is visible at a time (JS toggles this class) */
+.page { display: none; }
+.page.active { display: block; }
+
+h2 { margin-bottom: 18px; font-size: 22px; }
+
+/* =============================================================
+   SECTION 4: CARDS (white boxes with soft shadows)
+   ============================================================= */
+.card {
+  background: var(--card);
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(15, 41, 66, 0.08);
+  padding: 20px;
+}
+
+/* the 3 summary cards sit side by side */
+.summary-row { display: flex; gap: 18px; margin-bottom: 22px; }
+.summary-row .card { flex: 1; }
+.summary-label { font-size: 13px; color: #64748b; }
+.summary-value { font-size: 30px; font-weight: 700; margin-top: 6px; }
+.summary-value.teal { color: var(--teal); }
+
+/* chart + alert card side by side */
+.chart-row { display: flex; gap: 18px; }
+.chart-row .card:first-child { flex: 2; }   /* chart takes 2/3 width */
+.chart-row .card:last-child  { flex: 1; }   /* alert card takes 1/3   */
+
+/* alert card colour set by JavaScript based on the status */
+.alert-card { border-left: 6px solid var(--green); }
+.alert-card.critical { border-left-color: var(--red); }
+.alert-card.watch    { border-left-color: var(--orange); }
+.alert-status {
+  display: inline-block; padding: 4px 12px; border-radius: 999px;
+  color: #fff; font-weight: 700; font-size: 13px; margin: 8px 0;
+}
+.alert-status.CRITICAL { background: var(--red); }
+.alert-status.WATCH    { background: var(--orange); }
+.alert-status.OK       { background: var(--green); }
+
+/* =============================================================
+   SECTION 5: TABLES (inventory + redistribution)
+   ============================================================= */
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 12px 14px; font-size: 14px; }
+th { color: #64748b; font-weight: 600; border-bottom: 2px solid #e2e8f0; }
+td { border-bottom: 1px solid #eef2f6; }
+
+/* coloured status badges (small rounded pills) */
+.badge {
+  padding: 4px 12px; border-radius: 999px;
+  font-size: 12px; font-weight: 700; color: #fff;
+}
+.badge.healthy { background: var(--green); }
+.badge.low     { background: var(--orange); }
+.badge.critical{ background: var(--red); }
+
+.before-after { font-size: 13px; color: #64748b; }
+.before-after b { color: var(--teal); }
+
+/* =============================================================
+   SECTION 6: LOADING + ERROR STATES
+   ============================================================= */
+.loading { text-align: center; color: #64748b; padding: 40px; }
+.error-banner {
+  display: none;                       /* JS shows it only on failure */
+  background: #fef2f2;
+  border: 1px solid var(--red);
+  color: #b91c1c;
+  padding: 12px 16px; border-radius: 8px; margin-bottom: 18px;
+}
+</style>
+</head>
+
+<body>
+<!-- =============================================================
+     SIDEBAR NAVIGATION.  data-page links a nav item to the id of
+     the <section> it should show.
+     ============================================================= -->
+<nav class="sidebar">
+  <div class="logo">PHC<span>-Pulse</span></div>
+  <a class="nav-item active" data-page="dashboard">Dashboard</a>
+  <a class="nav-item" data-page="inventory">Medicine Inventory</a>
+  <a class="nav-item" data-page="forecast">AI Forecast &amp; Alerts</a>
+  <a class="nav-item" data-page="redistribution">Redistribution</a>
+</nav>
+
+<div class="main">
+  <!-- TOP HEADER: facility name (hardcoded for now), today's date, bell -->
+  <header class="topbar">
+    <div>
+      <div class="facility">PHC Rampur Block-1</div>
+      <div class="date" id="todayDate"></div>
+    </div>
+    <div class="bell" title="Notifications">&#128276;</div>  <!-- bell emoji -->
+  </header>
+
+  <div class="content">
+    <!-- red banner shown if the backend can't be reached -->
+    <div class="error-banner" id="errorBanner"></div>
+
+    <!-- ================= PAGE 1: DASHBOARD ================= -->
+    <section class="page active" id="page-dashboard">
+      <h2>Dashboard</h2>
+
+      <!-- the 3 summary cards (demo numbers until real endpoints exist) -->
+      <div class="summary-row">
+        <div class="card">
+          <div class="summary-label">Medicine Status</div>
+          <div class="summary-value" id="cardMedStatus">...</div>
+        </div>
+        <div class="card">
+          <div class="summary-label">Beds Available</div>
+          <div class="summary-value teal">6 / 12</div>
+        </div>
+        <div class="card">
+          <div class="summary-label">Staff Present</div>
+          <div class="summary-value">4 / 5</div>
+        </div>
+      </div>
+
+      <div class="chart-row">
+        <!-- the 7-day forecast line chart gets drawn into this canvas -->
+        <div class="card">
+          <div class="summary-label">7-Day Demand Forecast (antimalarial)</div>
+          <canvas id="forecastChart" height="120"></canvas>
+        </div>
+        <!-- current alert status card (coloured by JS) -->
+        <div class="card alert-card" id="alertCard">
+          <div class="summary-label">Current Alert</div>
+          <div id="alertBody"><p class="loading">Loading…</p></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ PAGE 2: MEDICINE INVENTORY (demo rows) ============ -->
+    <section class="page" id="page-inventory">
+      <h2>Medicine Inventory</h2>
+      <div class="card">
+        <table>
+          <thead>
+            <tr><th>Medicine Name</th><th>Current Stock</th>
+                <th>Days Remaining</th><th>Status</th></tr>
+          </thead>
+          <tbody id="inventoryBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ============ PAGE 3: AI FORECAST & ALERTS (same data) ============ -->
+    <section class="page" id="page-forecast">
+      <h2>AI Forecast &amp; Alerts</h2>
+      <div class="card">
+        <div class="summary-label">7-Day Forecast — antimalarial</div>
+        <canvas id="forecastChart2" height="120"></canvas>
+      </div>
+      <p class="loading" style="margin-top:14px" id="forecastNote">
+        Alert details are shown on the Dashboard card.
+      </p>
+    </section>
+
+    <!-- ============ PAGE 4: REDISTRIBUTION (from the API) ============ -->
+    <section class="page" id="page-redistribution">
+      <h2>Redistribution Plan</h2>
+      <div class="card">
+        <table>
+          <thead>
+            <tr><th>From PHC</th><th>To PHC</th><th>Quantity</th>
+                <th>Drug</th><th>Stock Before → After</th></tr>
+          </thead>
+          <tbody id="redistBody">
+            <tr><td colspan="5" class="loading">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script>
+/* =============================================================
+   SECTION 7: CONFIGURATION
+   NOTE: phc_id must match what app.py accepts ("PHC_01".."PHC_20").
+   If we called /forecast/1 the backend would answer 404, because
+   VALID_PHCS only contains the zero-padded names.
+   ============================================================= */
+const API_BASE = "http://localhost:5000";
+const PHC_ID   = "PHC_01";
+
+/* Show today's date in the header, e.g. "Tue, 29 Sep 2026" */
+document.getElementById("todayDate").textContent =
+    new Date().toLocaleDateString("en-IN",
+        { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+
+/* =============================================================
+   SECTION 8: SIDEBAR NAVIGATION (simple page switching)
+   Each nav click hides all pages, then shows the chosen one.
+   ============================================================= */
+document.querySelectorAll(".nav-item").forEach(item => {
+  item.addEventListener("click", () => {
+    document.querySelectorAll(".nav-item").forEach(i => i.classList.remove("active"));
+    document.querySelectorAll(".page").forEach(p => p.classList.remove("active"));
+    item.classList.add("active");
+    document.getElementById("page-" + item.dataset.page).classList.add("active");
+  });
+});
+
+/* =============================================================
+   SECTION 9: FETCHING DATA FROM THE FLASK BACKEND
+   fetch() = ask a URL for data. We use async/await so the page
+   doesn't freeze while waiting for the answer.
+   ============================================================= */
+function showError(message) {
+  const banner = document.getElementById("errorBanner");
+  banner.textContent = message;
+  banner.style.display = "block";   // make the red banner visible
+}
+
+async function loadDashboard() {
+  try {
+    // ---- 1. Get the 7-day forecast ----
+    const resF = await fetch(`${API_BASE}/forecast/${PHC_ID}`);
+    if (!resF.ok) throw new Error("Forecast endpoint failed (" + resF.status + ")");
+    const forecast = await resF.json();
+
+    // ---- 2. Get the alert status ----
+    const resA = await fetch(`${API_BASE}/alert/${PHC_ID}`);
+    if (!resA.ok) throw new Error("Alert endpoint failed (" + resA.status + ")");
+    const alert = await resA.json();
+
+    // ---- 3. Draw the forecast line chart ----
+    // Labels: Day+1 .. Day+7 (we don't have real dates yet)
+    const labels = forecast.forecast_7day.map((_, i) => "Day " + (i + 1));
+    const config = {
+      type: "line",
+      data: {
+        labels: labels,
+        datasets: [{
+          label: "Forecasted demand (units/day)",
+          data: forecast.forecast_7day,
+          borderColor: "#14b8a6",
+          backgroundColor: "rgba(20,184,166,0.15)",
+          fill: true,
+          tension: 0.35,          // smooth curves
+          pointRadius: 4,
+        }]
+      },
+      options: { plugins: { legend: { display: true } }, scales: { y: { beginAtZero: true } } }
+    };
+    // One chart object per canvas; the "2nd page" chart mirrors the same data
+    new Chart(document.getElementById("forecastChart"), config);
+    new Chart(document.getElementById("forecastChart2"), config);
+
+    // ---- 4. Fill the alert card, colour it by status ----
+    const card = document.getElementById("alertCard");
+    card.classList.remove("critical", "watch");
+    if (alert.status === "CRITICAL") card.classList.add("critical");
+    if (alert.status === "WATCH")    card.classList.add("watch");
+
+    document.getElementById("alertBody").innerHTML = `
+      <span class="alert-status ${alert.status}">${alert.status}</span>
+      <p style="font-size:14px; margin-top:6px;">${alert.message}</p>`;
+  } catch (err) {
+    // Any problem (server off, 404, bad JSON) lands here.
+    showError("Could not reach the backend: " + err.message +
+              " — is app.py running on port 5000?");
+  }
+}
+
+/* =============================================================
+   SECTION 10: INVENTORY TABLE (demo rows for now)
+   There is no /inventory endpoint yet, so these numbers are
+   hardcoded placeholders. A backend endpoint will replace them.
+   ============================================================= */
+const inventory = [
+  { name: "Antimalarial",  stock: 32,  days: 3.2 },
+  { name: "Paracetamol",   stock: 120, days: 12  },
+  { name: "ORS Sachets",   stock: 300, days: 30  },
+  { name: "Respiratory",   stock: 60,  days: 1.5 },
+];
+
+function statusBadge(days) {
+  // pick a colour band from the days-remaining number
+  if (days < 7)  return `<span class="badge critical">CRITICAL</span>`;
+  if (days < 14) return `<span class="badge low">LOW</span>`;
+  return `<span class="badge healthy">HEALTHY</span>`;
+}
+
+document.getElementById("inventoryBody").innerHTML = inventory.map(row => `
+  <tr>
+    <td>${row.name}</td><td>${row.stock}</td><td>${row.days}</td>
+    <td>${statusBadge(row.days)}</td>
+  </tr>`).join("");
+
+/* "Medicine Status" summary card = how many are in bad shape */
+document.getElementById("cardMedStatus").textContent =
+  inventory.filter(r => r.days < 14).length + " need attention";
+
+/* =============================================================
+   SECTION 11: REDISTRIBUTION TABLE (real fetch, demo before/after)
+   The API gives us from/to/quantity/drug. The "before/after"
+   stock column is demo data for now: we pretend each receiver
+   starts at 20 units, so after = 20 + quantity. Later, real
+   stock numbers will replace the 20.
+   ============================================================= */
+async function loadRedistribution() {
+  const body = document.getElementById("redistBody");
+  try {
+    const res = await fetch(`${API_BASE}/redistribution-plan`);
+    if (!res.ok) throw new Error("Redistribution endpoint failed (" + res.status + ")");
+    const plan = await res.json();
+
+    if (plan.length === 0) {
+      body.innerHTML = `<tr><td colspan="5">No transfers needed — all stock healthy.</td></tr>`;
+      return;
+    }
+    body.innerHTML = plan.map(move => {
+      const before = 20;                       // DEMO placeholder
+      const after  = before + move.quantity;   // receiver gets the shipment
+      return `<tr>
+        <td>${move.from}</td><td>${move.to}</td>
+        <td><b>${move.quantity}</b> units</td><td>${move.drug_name}</td>
+        <td class="before-after">${before} → <b>${after}</b></td>
+      </tr>`;
+    }).join("");
+  } catch (err) {
+    body.innerHTML = `<tr><td colspan="5" class="loading">Failed to load plan: ${err.message}</td></tr>`;
+    showError("Redistribution: " + err.message);
+  }
+}
+
+/* =============================================================
+   SECTION 12: START EVERYTHING
+   ============================================================= */
+loadDashboard();
+loadRedistribution();
+</script>
+</body>
+</html>
