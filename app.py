@@ -37,8 +37,11 @@ Then open in a browser:  http://127.0.0.1:5000/forecast/PHC_01
 ===============================================================================
 """
 
+import os                              # read the PORT that hosts like Render provide
+
 from flask import Flask, jsonify, abort
 from flask_cors import CORS
+
 
 
 # =============================================================================
@@ -136,6 +139,15 @@ def server_error(error):
 # debug=True: auto-reloads on save + shows detailed errors (DEV ONLY -
 # turn this off for the deployed version).
 # =============================================================================
+from flask import send_from_directory
+
+@app.route("/")
+def serve_dashboard():
+    return send_from_directory(".", "index.html")
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    # Render (and most hosts) give us a PORT env var and require binding
+    # to 0.0.0.0 (all network interfaces). Locally it still works the same
+    # at http://127.0.0.1:5000 because PORT defaults to 5000.
+    app.run(debug=False, host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+
