@@ -15,20 +15,27 @@ WHAT THIS SCRIPT DOES
 6. Provides predict_demand(), which gives a 7-day forecast for one PHC and one
    drug. You can import it from other scripts:
 
-       from train_forecast_model import predict_demand
+       from train_forecast import predict_demand
 
 HOW TO RUN
 ----------
 Install the extra libraries once (inside your venv):
     pip install lightgbm scikit-learn
-Then run from the folder that contains phc_consumption.csv:
-    python train_forecast_model.py
+Then run:
+    python train_forecast.py
+The script finds phc_consumption.csv and forecast_model.pkl next to itself, so
+it does not matter which folder your terminal is in.
+
+IMPORTANT: the scores it prints are measured on SYNTHETIC data. They show that
+the model can recover the rules used to generate the data, not how accurate it
+would be on real PHC records.
 
 MAC NOTE: if you see an error mentioning "libomp", run: brew install libomp
 ===============================================================================
 """
 
 import pickle                      # saves/loads Python objects to/from a file
+from pathlib import Path           # builds file paths that work on Mac and Windows
 import numpy as np                 # number crunching
 import pandas as pd                # tables (DataFrames)
 from lightgbm import LGBMRegressor # the machine-learning model
@@ -38,8 +45,9 @@ from lightgbm import LGBMRegressor # the machine-learning model
 # SECTION 1: SETTINGS
 # =============================================================================
 
-CSV_PATH = "phc_consumption.csv"     # input data
-MODEL_PATH = "forecast_model.pkl"    # where the trained model is saved
+BASE_DIR = Path(__file__).resolve().parent   # the folder this script lives in
+CSV_PATH = BASE_DIR / "phc_consumption.csv"     # input data
+MODEL_PATH = BASE_DIR / "forecast_model.pkl"    # where the trained model is saved
 
 TEST_FRACTION = 0.20                 # last 20% of dates are held out for testing
 FORECAST_DAYS = 7                    # how far ahead predict_demand() looks
@@ -225,6 +233,8 @@ def train_and_evaluate():
         print("   - Were the rows sorted by date before building lag features?")
         print("   - Is there a lot of zero or near-zero demand in the data?")
     print()
+    print(" NOTE: the data is SYNTHETIC. These scores show the model recovers the")
+    print(" rules used to generate the data, not real-world accuracy.")
     print(" Note: these scores measure 1-day-ahead accuracy (the model is given the")
     print(" real previous days). The 7-day forecast from predict_demand() feeds its")
     print(" own predictions back in, so expect it to be somewhat less accurate.")
@@ -250,7 +260,17 @@ def train_and_evaluate():
 # SECTION 5: THE FORECASTING FUNCTION
 # =============================================================================
 
-def predict_demand(phc_id, drug_name, recent_data, model_path=MODEL_PATH):
+def load_model_bundle(model_path=MODEL_PATH):
+    """
+    Reads the saved model file from disk ONCE and returns it. Keep the result
+    and pass it to predict_demand(bundle=...) so the file is not re-read for
+    every PHC and drug.
+    """
+    with open(model_path, "rb") as f:
+        return pickle.load(f)
+
+
+def predict_demand(phc_id, drug_name, recent_data, bundle=None, model_path=MODEL_PATH):
     """
     Forecasts the next 7 days of demand for ONE PHC and ONE drug.
 
@@ -262,14 +282,18 @@ def predict_demand(phc_id, drug_name, recent_data, model_path=MODEL_PATH):
                    at least 14 consecutive daily rows, ending on the latest
                    day you know about.
 
+    bundle       : (optional) the result of load_model_bundle(). If you are
+                   forecasting many PHCs, load it once and pass it in here.
+                   If left out, the model file is read from disk on this call.
+
     Returns a list of 7 numbers: the forecast for day+1, day+2, ... day+7.
 
     How it works: predict tomorrow, add that prediction to the history as if
     it had really happened, then predict the day after, and so on.
     """
-    # Load the saved model and its encodings
-    with open(model_path, "rb") as f:
-        bundle = pickle.load(f)
+    # Load the saved model and its encodings (only if the caller did not pass them in)
+    if bundle is None:
+        bundle = load_model_bundle(model_path)
     model = bundle["model"]
     feature_columns = bundle["feature_columns"]
     district_map = bundle["district_map"]
@@ -329,7 +353,8 @@ if __name__ == "__main__":
     demo_phc, demo_drug = "PHC_01", "antimalarial"
     last_30 = raw_data[(raw_data["phc_id"] == demo_phc) &
                        (raw_data["drug_name"] == demo_drug)].tail(30)
-    forecast = predict_demand(demo_phc, demo_drug, last_30)
+    bundle = load_model_bundle()
+    forecast = predict_demand(demo_phc, demo_drug, last_30, bundle=bundle)
     print()
     print(f"Demo: last 7 actual days for {demo_phc} / {demo_drug}: "
           f"{last_30['units_consumed'].tail(7).tolist()}")

@@ -16,11 +16,13 @@ and a district distance matrix. It writes three CSV files:
 It then plots total daily antimalarial demand so you can check by eye that
 the monsoon peak shows up.
 
-CALIBRATION CHOICES AND THEIR BASIS
------------------------------------
-The shape of the data follows the broad disease-burden picture reported in
-India's National Health Profile (NHP) 2023, published by the Central Bureau
-of Health Intelligence, Ministry of Health & Family Welfare:
+ASSUMPTIONS BEHIND THE DATA (THIS DATA IS SYNTHETIC)
+----------------------------------------------------
+Nothing here is real PHC data, and no number is copied from a published
+table. The shape below is a story written from broad public-health ideas that
+are loosely inspired by India's National Health Profile (NHP) 2023, published
+by the Central Bureau of Health Intelligence. We have NOT checked these
+points line by line against the report, so treat every one as an assumption:
 
   1. MALARIA IS GEOGRAPHICALLY CONCENTRATED. The NHP shows malaria cases
      clustering in a limited set of states/regions rather than being spread
@@ -40,15 +42,21 @@ of Health Intelligence, Ministry of Health & Family Welfare:
      2-3 random "outbreak" events per PHC, per drug, per year (demand jumps
      2-3x for 5-10 days) to mimic local health emergencies.
 
-IMPORTANT HONESTY NOTE: the *pattern* (concentration, seasonality, which
-disease is bigger) comes from the NHP 2023 picture, but the exact numbers
-below (baseline units per day, 3x, 2x, 1.8x) are ILLUSTRATIVE ASSUMPTIONS
-chosen to match that picture. They are not values copied from NHP tables.
-If you need the data to be quantitatively faithful, replace the constants in
-SECTION 1 with figures you extract from the NHP report.
+IMPORTANT HONESTY NOTE: the exact numbers below (baseline units per day, 3x,
+2x, 1.8x) are ILLUSTRATIVE ASSUMPTIONS. They are not values copied from NHP
+tables. When you describe this project, call the data "synthetic, based on
+stated assumptions", not "based on NHP data". If you need the data to be
+quantitatively faithful, replace the constants in SECTION 1 with figures you
+extract from the report.
+
+HOW TO RUN
+    python data_generator.py
+The CSV files and the plot are saved in the same folder as this script, no
+matter which folder your terminal is in.
 ===============================================================================
 """
 
+from pathlib import Path           # builds file paths that work on Mac and Windows
 import numpy as np                 # numbers and random-number tools
 import pandas as pd                # tables (called "DataFrames")
 import matplotlib.pyplot as plt    # plotting
@@ -59,6 +67,10 @@ import matplotlib.pyplot as plt    # plotting
 # Every number you might want to tweak lives here, so you never have to hunt
 # through the code to change something.
 # =============================================================================
+
+# Save all output files next to this script, regardless of which folder the
+# terminal is in when you run it.
+OUT_DIR = Path(__file__).resolve().parent
 
 SEED = 42  # Same seed = same "random" data every run. Change it for new data.
 rng = np.random.default_rng(SEED)  # our random-number generator, used everywhere
@@ -321,13 +333,13 @@ distances = pd.DataFrame(dist.round(1), index=DISTRICT_NAMES, columns=DISTRICT_N
 
 out_consumption = consumption.copy()
 out_consumption["date"] = out_consumption["date"].dt.strftime("%Y-%m-%d")
-out_consumption.to_csv("phc_consumption.csv", index=False)
+out_consumption.to_csv(OUT_DIR / "phc_consumption.csv", index=False)
 
 out_batches = batches.copy()
 out_batches["expiry_date"] = out_batches["expiry_date"].dt.strftime("%Y-%m-%d")
-out_batches.to_csv("stock_batches.csv", index=False)
+out_batches.to_csv(OUT_DIR / "stock_batches.csv", index=False)
 
-distances.to_csv("district_distances.csv", index_label="district")
+distances.to_csv(OUT_DIR / "district_distances.csv", index_label="district")
 
 print(f"phc_consumption.csv    : {len(consumption):,} rows")
 print(f"stock_batches.csv      : {len(batches)} rows")
@@ -373,5 +385,5 @@ ax.set_ylabel("Units consumed per day")
 ax.legend()
 ax.grid(alpha=0.3)
 plt.tight_layout()
-plt.savefig("antimalarial_daily_demand.png", dpi=150)  # also save a copy as an image
+plt.savefig(OUT_DIR / "antimalarial_daily_demand.png", dpi=150)  # also save a copy as an image
 plt.show()

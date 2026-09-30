@@ -222,6 +222,7 @@ venv/
 __pycache__/
 *.pyc
 *.pkl
+!forecast_model.pkl
 .env
 .ipynb_checkpoints/
 data/raw/
